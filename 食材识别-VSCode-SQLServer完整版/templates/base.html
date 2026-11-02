@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{% block title %}智能食检{% endblock %}</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='ui.css') }}">
+  {% block head %}{% endblock %}
+</head>
+<body class="app-body">
+  <div class="ambient ambient-a"></div><div class="ambient ambient-b"></div>
+  <div class="system-rail" aria-hidden="true"><span>NODE 01</span><span>VISION CORE</span><span>SQL LINK · SECURE</span></div>
+  <nav class="tech-nav">
+    <a class="tech-brand" href="/">
+      <span class="brand-mark"><i class="fa-solid fa-leaf"></i></span>
+      <span><b>智能食检</b><small>NUTRISCAN AI</small></span>
+    </a>
+    <div class="tech-links">
+      <a href="/" class="{{ 'active' if active=='home' }}"><i class="fa-solid fa-wand-magic-sparkles"></i>识别中心</a>
+      <a href="/recipes" class="{{ 'active' if active=='recipes' }}"><i class="fa-solid fa-bowl-food"></i>智能食谱</a>
+      <a href="/analysis" class="{{ 'active' if active=='analysis' }}"><i class="fa-solid fa-chart-line"></i>营养分析</a>
+      <a href="/profile" class="{{ 'active' if active=='profile' }}"><i class="fa-regular fa-user"></i>个人中心</a>
+    </div>
+    <div class="nav-user" id="navUser">
+      <a class="ghost-btn" href="/login">登录</a><a class="neon-btn small" href="/login">免费注册</a>
+    </div>
+  </nav>
+  <main class="shell">{% block content %}{% endblock %}</main>
+  <footer class="tech-footer">
+    <div><span class="status-dot"></span> NUTRISCAN AI SYSTEM ONLINE</div>
+    <div>智能食材识别与个性化膳食推荐系统</div>
+  </footer>
+  <div id="toast" class="new-toast"></div>
+  <button id="aiCoreButton" class="ai-core-button" aria-label="打开个人营养助手">
+    <span class="core-radar"></span><i class="fa-solid fa-brain"></i>
+    <em>AI</em>
+  </button>
+  <aside id="aiDock" class="ai-dock" aria-hidden="true">
+    <header class="ai-dock-head">
+      <div class="ai-avatar"><i class="fa-solid fa-brain"></i></div>
+      <div><small>NUTRITION INTELLIGENCE</small><b>个人营养 AI 核心</b><span><i class="status-dot"></i> USER DATA LINK</span></div>
+      <button id="aiClose" aria-label="关闭">×</button>
+    </header>
+    <div id="aiIdentity" class="ai-identity">正在连接个人档案...</div>
+    <div id="aiContextStrip" class="ai-context-strip">
+      <div><small>TODAY SCANS</small><b>--</b></div><div><small>FAVORITES</small><b>--</b></div><div><small>CAL TARGET</small><b>--</b></div>
+    </div>
+    <div id="aiMessages" class="ai-messages"></div>
+    <div class="ai-prompts" id="aiPrompts">
+      <button>我今天识别了什么？</button><button>我的收藏有哪些？</button>
+      <button>我的目标热量是多少？</button><button>今天吃什么？</button>
+    </div>
+    <form id="aiForm" class="ai-form">
+      <input id="aiInput" maxlength="500" autocomplete="off" placeholder="询问你的个人营养数据...">
+      <button type="submit"><i class="fa-solid fa-arrow-up"></i></button>
+    </form>
+  </aside>
+  <script>
+    async function syncUser(){
+      try{
+        const d=await fetch('/api/check_login').then(r=>r.json());
+        if(d.logged_in) document.getElementById('navUser').innerHTML=
+          `<span class="user-chip"><i class="fa-solid fa-circle-user"></i>${escapeHtml(d.username)}</span>
+           <button class="ghost-btn" onclick="logout()">退出</button>`;
+      }catch(e){}
+    }
+    async function logout(){await fetch('/api/logout',{method:'POST'});location.href='/'}
+    function escapeHtml(v){const d=document.createElement('div');d.textContent=v??'';return d.innerHTML}
+    function toast(msg){const el=document.getElementById('toast');el.textContent=msg;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),2200)}
+    syncUser();
+    const aiDock=document.getElementById('aiDock'),aiMessages=document.getElementById('aiMessages');
+    let aiLoaded=false,aiLoggedIn=false;
+    function aiMessage(role,text,time=''){
+      const row=document.createElement('div');row.className='ai-message '+role;
+      row.innerHTML=`<span>${role==='assistant'?'<i class="fa-solid fa-brain"></i>':'YOU'}</span><div>${escapeHtml(text)}</div>${time?`<small>${escapeHtml(time)}</small>`:''}`;
+      aiMessages.appendChild(row);aiMessages.scrollTop=aiMessages.scrollHeight;
+    }
+    async function loadAssistant(){
+      if(aiLoaded)return;aiLoaded=true;
+      const d=await fetch('/api/assistant/context').then(r=>r.json()).catch(()=>({success:false,message:'连接失败'}));
+      aiMessages.innerHTML='';aiLoggedIn=!!d.logged_in;
+      if(!d.logged_in){
+        document.getElementById('aiIdentity').innerHTML='<i class="fa-solid fa-lock"></i> 尚未连接用户档案';
+        document.getElementById('aiContextStrip').innerHTML='<a href="/login" class="neon-btn">登录后启用个人助手</a>';
+        aiMessage('assistant','登录后，我可以读取你自己的收藏、健康目标和今日识别记录。');
+        return;
+      }
+      document.getElementById('aiIdentity').innerHTML=`<i class="fa-solid fa-circle-user"></i> 已连接：<b>${escapeHtml(d.username)}</b> · ${d.model_enabled?`QWEN ${escapeHtml(d.model)} ONLINE`:'本地上下文模式'}`;
+      const target=d.profile?d.profile.metrics.daily_target:'--';
+      document.getElementById('aiContextStrip').innerHTML=`<div><small>TODAY SCANS</small><b>${d.today.count}</b></div><div><small>FAVORITES</small><b>${d.favorite_count}</b></div><div><small>CAL TARGET</small><b>${target}</b></div>`;
+      if(d.recent_messages&&d.recent_messages.length)d.recent_messages.forEach(m=>aiMessage(m.role,m.content,m.time));
+      else aiMessage('assistant',`${d.username}，你好。我已经连接你的个人营养档案，可以结合今天的识别、收藏和健康目标回答问题。`);
+    }
+    document.getElementById('aiCoreButton').onclick=()=>{aiDock.classList.add('open');aiDock.setAttribute('aria-hidden','false');loadAssistant()};
+    document.getElementById('aiClose').onclick=()=>{aiDock.classList.remove('open');aiDock.setAttribute('aria-hidden','true')};
+    document.querySelectorAll('#aiPrompts button').forEach(b=>b.onclick=()=>{document.getElementById('aiInput').value=b.textContent;document.getElementById('aiForm').requestSubmit()});
+    document.getElementById('aiForm').onsubmit=async e=>{
+      e.preventDefault();const input=document.getElementById('aiInput'),q=input.value.trim();if(!q)return;
+      if(!aiLoggedIn){location.href='/login';return}aiMessage('user',q);input.value='';input.disabled=true;
+      const thinking=document.createElement('div');thinking.className='ai-thinking';thinking.innerHTML='<i></i><i></i><i></i>';aiMessages.appendChild(thinking);aiMessages.scrollTop=aiMessages.scrollHeight;
+      try{const d=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q})}).then(r=>r.json());thinking.remove();aiMessage('assistant',d.reply||d.error||'暂时无法回答')}catch(err){thinking.remove();aiMessage('assistant','连接个人营养核心失败，请稍后重试。')}finally{input.disabled=false;input.focus()}
+    };
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

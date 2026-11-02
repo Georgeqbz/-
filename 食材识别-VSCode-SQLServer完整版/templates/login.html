@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}登录 - 智能食检{% endblock %}
+{% block content %}
+<section class="auth-stage">
+  <div class="auth-visual">
+    <div class="eyebrow"><span class="status-dot"></span> PERSONAL HEALTH MATRIX</div>
+    <h1>连接你的<br><span>智能饮食档案</span></h1>
+    <p>让每一次识别都成为可追踪的健康数据。</p>
+    <div class="orbit"><span>🥦</span><span>🍅</span><span>🥑</span><div><i class="fa-solid fa-leaf"></i></div></div>
+  </div>
+  <div class="auth-panel">
+    <div class="auth-tabs"><button class="active" data-mode="login">登录</button><button data-mode="register">注册</button></div>
+    <div class="auth-title"><small>WELCOME TO NUTRISCAN</small><h2 id="authTitle">欢迎回来</h2><p id="authSub">登录后继续管理你的营养数据</p></div>
+    <form id="authForm">
+      <label>用户名<div class="input-tech"><i class="fa-regular fa-user"></i><input id="username" required placeholder="请输入用户名"></div></label>
+      <label>密码<div class="input-tech"><i class="fa-solid fa-lock"></i><input id="password" type="password" required minlength="6" placeholder="至少 6 位密码"></div></label>
+      <label id="confirmWrap" class="hidden">确认密码<div class="input-tech"><i class="fa-solid fa-shield-halved"></i><input id="confirm" type="password" placeholder="再次输入密码"></div></label>
+      <button class="detect-btn" id="authSubmit"><i class="fa-solid fa-arrow-right-to-bracket"></i><span>进入系统</span></button>
+    </form>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+let mode='login';document.querySelectorAll('.auth-tabs button').forEach(b=>b.onclick=()=>{mode=b.dataset.mode;document.querySelectorAll('.auth-tabs button').forEach(x=>x.classList.toggle('active',x===b));document.getElementById('confirmWrap').classList.toggle('hidden',mode==='login');document.getElementById('authTitle').textContent=mode==='login'?'欢迎回来':'创建健康档案';document.getElementById('authSub').textContent=mode==='login'?'登录后继续管理你的营养数据':'开启你的 AI 饮食管理旅程';document.querySelector('#authSubmit span').textContent=mode==='login'?'进入系统':'立即注册'});
+document.getElementById('authForm').onsubmit=async e=>{
+  e.preventDefault();
+  const u=document.getElementById('username').value.trim();
+  const p=document.getElementById('password').value;
+  const confirmPassword=document.getElementById('confirm').value;
+  if(mode==='register'&&p!==confirmPassword)return toast('两次密码输入不一致');
+  const btn=document.getElementById('authSubmit');
+  btn.disabled=true;
+  try{
+    const d=await fetch('/api/'+mode,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({username:u,password:p})
+    }).then(r=>r.json());
+    toast(d.message);
+    if(d.success)setTimeout(()=>location.href=mode==='login'?'/':'/login',700);
+  }finally{btn.disabled=false}
+};
+</script>
+{% endblock %}

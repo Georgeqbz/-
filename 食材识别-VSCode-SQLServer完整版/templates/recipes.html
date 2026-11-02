@@ -1,0 +1,55 @@
+{% extends "base.html" %}{% set active="recipes" %}
+{% block title %}智能食谱库 - 智能食检{% endblock %}
+{% block content %}
+<header class="page-hero"><div><div class="eyebrow"><span class="status-dot"></span> AI RECIPE LAB</div><h1>智能食谱实验室</h1><p>从食材出发，让 AI 为你匹配更适合的健康做法。</p></div><div class="hero-orb"><i class="fa-solid fa-bowl-food"></i></div></header>
+<section class="search-console">
+  <i class="fa-solid fa-magnifying-glass"></i><input id="query" placeholder="输入食材或菜名，例如：鸡胸肉"><button id="searchBtn" class="neon-btn">智能搜索</button>
+</section>
+<div class="quick-row"><span>热门探索</span><button>鸡胸肉</button><button>西兰花</button><button>低脂早餐</button><button>番茄</button></div>
+<section class="dashboard-section">
+  <div class="section-heading"><div><span>SMART MATCH</span><h2 id="recipeTitle">今日轻食推荐</h2></div><em id="recipeCount"></em></div>
+  <div class="recipe-grid-new" id="recipesGrid"><div class="skeleton-card"></div><div class="skeleton-card"></div><div class="skeleton-card"></div></div>
+  <div class="tech-pagination hidden" id="recipePagination"></div>
+</section>
+<dialog id="recipeDialog" class="recipe-dialog"><button class="dialog-close" onclick="recipeDialog.close()">×</button><div id="dialogBody"></div></dialog>
+{% endblock %}
+{% block scripts %}
+<script>
+const grid=document.getElementById('recipesGrid'),q=document.getElementById('query'),pager=document.getElementById('recipePagination');
+let recipes=[],favoriteKeys=new Set(),currentPage=1,currentQuery='',isSearching=false,hasNextPage=false;
+function hashId(text){let h=0;for(const ch of String(text||''))h=((h<<5)-h+ch.charCodeAt(0))|0;return Math.abs(h)||1}
+function normalize(x,i,type){return {...x,id:Number(x.id)||hashId((x.name||'recipe')+currentPage+i),recipe_type:type||x.recipe_type||'healthy',cuisine:x.cuisine||x.type||'健康食谱',feature:x.feature||'智能推荐',calories:x.calories||0}}
+function recipeKey(x){return `${x.recipe_type}:${x.id}`}
+function show(items,{searching=false,page=1,hasNext=false}={}){
+  recipes=items;isSearching=searching;currentPage=page;hasNextPage=hasNext;
+  const count=document.getElementById('recipeCount');
+  count.textContent=searching?`第 ${page} 页 · 本页 ${items.length} 道`:'';
+  count.classList.toggle('hidden',!searching);
+  grid.innerHTML=items.map((x,i)=>{const liked=favoriteKeys.has(recipeKey(x));return `<article class="recipe-tile"><div class="recipe-cover"><span>${['🥗','🍲','🥙','🍛'][i%4]}</span><em>${escapeHtml(x.cuisine)}</em></div><div class="recipe-body"><small>${escapeHtml(x.feature)}</small><h3>${escapeHtml(x.name)}</h3><p><i class="fa-solid fa-fire"></i> ${x.calories||'--'} kcal</p><div><button class="ghost-btn" onclick="detail(${i})">查看详情</button><button id="heart-${i}" class="icon-btn heart-btn ${liked?'liked':''}" onclick="toggleFavorite(${i})" aria-label="收藏"><i class="${liked?'fa-solid':'fa-regular'} fa-heart"></i></button></div></div></article>`}).join('')||'<div class="empty-tech">没有找到相关食谱，换个关键词试试</div>';
+  renderPager();
+}
+function renderPager(){
+  if(!isSearching||(!hasNextPage&&currentPage===1)){pager.classList.add('hidden');pager.innerHTML='';return}
+  pager.classList.remove('hidden');
+  pager.innerHTML=`<button ${currentPage===1?'disabled':''} onclick="search(${currentPage-1},false)"><i class="fa-solid fa-chevron-left"></i> 上一页</button><span>PAGE <b>${currentPage}</b></span><button ${!hasNextPage?'disabled':''} onclick="search(${currentPage+1},false)">下一页 <i class="fa-solid fa-chevron-right"></i></button>`;
+}
+async function loadFavoriteKeys(){const d=await fetch('/api/favorite/keys').then(r=>r.json()).catch(()=>({keys:[]}));favoriteKeys=new Set(d.keys||[])}
+async function loadHealthy(){currentQuery='';document.getElementById('recipeTitle').textContent='今日轻食推荐';grid.innerHTML='<div class="skeleton-card"></div><div class="skeleton-card"></div>';const d=await fetch('/api/healthy_recipes').then(r=>r.json());show((Array.isArray(d)?d:[]).map((x,i)=>normalize(x,i,'healthy')),{searching:false})}
+async function search(page=1,save=true){
+  const word=q.value.trim();if(!word)return loadHealthy();currentQuery=word;
+  document.getElementById('recipeTitle').textContent=`“${word}” 的智能匹配`;grid.innerHTML='<div class="skeleton-card"></div><div class="skeleton-card"></div>';pager.classList.add('hidden');
+  if(save)await fetch('/api/search/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keyword:word})});
+  try{
+    const online=await fetch(`/api/recipes?query=${encodeURIComponent(word)}&page=${page}`).then(r=>r.json());
+    if(online.success&&online.recipes&&online.recipes.length){show(online.recipes.map((x,i)=>normalize(x,i,'online')),{searching:true,page,hasNext:!!online.has_next});return}
+  }catch(e){}
+  const local=await fetch('/api/recommend_by_ingredient?ingredient='+encodeURIComponent(word)).then(r=>r.json()).catch(()=>[]);
+  const all=(Array.isArray(local)?local:[]).map((x,i)=>normalize(x,i,'healthy')),start=(page-1)*8;
+  show(all.slice(start,start+8),{searching:true,page,hasNext:all.length>start+8});
+}
+document.getElementById('searchBtn').onclick=()=>search(1,true);q.onkeydown=e=>{if(e.key==='Enter')search(1,true)};document.querySelectorAll('.quick-row button').forEach(b=>b.onclick=()=>{q.value=b.textContent;search(1,true)});
+function detail(i){const x=recipes[i];dialogBody.innerHTML=`<div class="dialog-hero"><span>AI RECIPE · ${escapeHtml(x.cuisine||'健康食谱')}</span><h2>${escapeHtml(x.name)}</h2><p>${x.calories||'--'} kcal / 份</p></div><div class="dialog-section"><h3>所需食材</h3><p>${escapeHtml(x.ingredients||'暂无')}</p><h3>制作步骤</h3><p>${escapeHtml(x.steps||'暂无')}</p><h3>健康提示</h3><p>${escapeHtml(x.tips||'少油少盐，合理搭配。')}</p></div>`;recipeDialog.showModal()}
+async function toggleFavorite(i){const x=recipes[i],key=recipeKey(x),liked=favoriteKeys.has(key),url=liked?'/api/favorite/remove':'/api/favorite/add';const body=liked?{recipe_id:x.id,recipe_type:x.recipe_type}:{recipe_id:x.id,recipe_type:x.recipe_type,recipe_name:x.name,recipe_calories:x.calories,recipe_ingredients:x.ingredients,recipe_steps:x.steps,recipe_tips:x.tips,recipe_cuisine:x.cuisine,recipe_feature:x.feature};const d=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());if(d.success){liked?favoriteKeys.delete(key):favoriteKeys.add(key);const b=document.getElementById('heart-'+i);b.classList.toggle('liked',!liked);b.querySelector('i').className=`${!liked?'fa-solid':'fa-regular'} fa-heart`}toast(d.message)}
+(async()=>{await loadFavoriteKeys();const initial=new URLSearchParams(location.search).get('query');if(initial){q.value=initial;search(1,true)}else loadHealthy()})();
+</script>
+{% endblock %}

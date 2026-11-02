@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% set active = "home" %}
+{% block title %}AI 食材识别中心 - 智能食检{% endblock %}
+{% block content %}
+<section class="hero-grid">
+  <div class="hero-copy">
+    <div class="eyebrow"><span class="status-dot"></span> AI VISION ENGINE 2.0</div>
+    <h1>看见食材，<br><span>读懂每一份营养</span></h1>
+    <p>上传一张食材照片，AI 将快速识别食材，并生成热量、蛋白质、脂肪、碳水与健康食谱建议。</p>
+    <div class="hero-stats">
+      <div><b>&lt; 3s</b><small>平均识别</small></div><div><b>4 项</b><small>核心营养</small></div><div><b>AI</b><small>个性推荐</small></div>
+    </div>
+  </div>
+  <div class="scanner-card">
+    <div class="panel-head"><span><i class="fa-solid fa-camera-retro"></i> AI 图像扫描舱</span><em>READY</em></div>
+    <label class="scanner-zone" id="dropZone">
+      <input id="fileInput" type="file" accept="image/*" hidden>
+      <img id="preview" alt="">
+      <div id="uploadPrompt" class="upload-prompt">
+        <span class="scan-icon"><i class="fa-solid fa-fingerprint"></i></span>
+        <h3>点击或拖拽食材图片</h3><p>支持 JPG / PNG / WEBP · 最大 16MB</p>
+        <span class="neon-btn">选择图片</span>
+      </div>
+      <div class="scan-beam"></div><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+    </label>
+    <button id="detectBtn" class="detect-btn" disabled><i class="fa-solid fa-microchip"></i><span>启动 AI 识别</span></button>
+  </div>
+</section>
+<section id="resultPanel" class="result-panel hidden">
+  <div class="section-heading"><div><span>ANALYSIS RESULT</span><h2>营养识别报告</h2></div><div class="confidence">AI 已完成分析</div></div>
+  <div id="resultContent"></div>
+</section>
+<section class="dashboard-section">
+  <div class="section-heading"><div><span>NUTRITION DATABASE</span><h2>今日热门食材</h2></div><a href="/recipes">探索智能食谱 <i class="fa-solid fa-arrow-right"></i></a></div>
+  <div class="food-grid" id="foodGrid"><div class="skeleton-card"></div><div class="skeleton-card"></div><div class="skeleton-card"></div></div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+const input=document.getElementById('fileInput'), zone=document.getElementById('dropZone'), preview=document.getElementById('preview'), btn=document.getElementById('detectBtn');let currentNutrition=null;
+function choose(file){if(!file)return;if(!file.type.startsWith('image/'))return toast('请选择图片文件');preview.src=URL.createObjectURL(file);preview.classList.add('show');document.getElementById('uploadPrompt').classList.add('hidden');btn.disabled=false}
+input.onchange=e=>choose(e.target.files[0]); zone.ondragover=e=>{e.preventDefault();zone.classList.add('drag')};zone.ondragleave=()=>zone.classList.remove('drag');zone.ondrop=e=>{e.preventDefault();zone.classList.remove('drag');input.files=e.dataTransfer.files;choose(e.dataTransfer.files[0])};
+btn.onclick=async()=>{if(!input.files[0])return;btn.disabled=true;btn.innerHTML='<i class="fa-solid fa-spinner fa-spin"></i><span>AI 正在分析...</span>';const fd=new FormData();fd.append('image',input.files[0]);try{const d=await fetch('/detect',{method:'POST',body:fd}).then(r=>r.json());renderResult(d);if(d.success)await saveHistory(d)}catch(e){toast('识别失败，请检查网络与密钥')}finally{btn.disabled=false;btn.innerHTML='<i class="fa-solid fa-rotate"></i><span>重新识别</span>'}};
+function renderResult(d){const p=document.getElementById('resultPanel'),c=document.getElementById('resultContent');p.classList.remove('hidden');if(d.error){c.innerHTML=`<div class="empty-tech"><i class="fa-solid fa-triangle-exclamation"></i>${escapeHtml(d.error)}</div>`;return}currentNutrition=d;c.innerHTML=`<div class="identity-card"><div class="identity-icon">🥬</div><div><small>识别结果</small><h3>${escapeHtml(d.food||d.recognized_as)}</h3><p>AI 判断：${escapeHtml(d.recognized_as)}</p></div></div><div class="metric-grid">${metric('fa-fire','热量',d.calorie_per_100g,'orange','calorieMetric')}${metric('fa-dumbbell','蛋白质',d.protein,'green','proteinMetric')}${metric('fa-droplet','脂肪',d.fat,'yellow','fatMetric')}${metric('fa-wheat-awn','碳水',d.carbohydrate,'blue','carbMetric')}</div><div class="portion-tool"><div><small>PORTION CALCULATOR</small><b>按食用重量换算</b></div><label><input type="number" min="1" max="5000" value="100" oninput="scaleNutrition(this.value)"> 克</label></div><a class="recommend-link" href="/recipes?query=${encodeURIComponent(d.food||d.recognized_as)}"><i class="fa-solid fa-sparkles"></i> 获取专属食谱推荐 <i class="fa-solid fa-arrow-right"></i></a>`;p.scrollIntoView({behavior:'smooth'})}
+function metric(icon,n,v,color,id){return `<div class="metric ${color}"><i class="fa-solid ${icon}"></i><div><small>${n}</small><b id="${id}">${escapeHtml(v||'--')}</b></div></div>`}
+function nutrientNumber(v){const n=parseFloat(String(v||'').replace(/[^\d.]/g,''));return Number.isFinite(n)?n:0}
+function scaleNutrition(grams){if(!currentNutrition)return;const ratio=Math.max(Number(grams)||0,0)/100;document.getElementById('calorieMetric').textContent=(nutrientNumber(currentNutrition.calorie_per_100g)*ratio).toFixed(1)+' 千卡';document.getElementById('proteinMetric').textContent=(nutrientNumber(currentNutrition.protein)*ratio).toFixed(1)+' 克';document.getElementById('fatMetric').textContent=(nutrientNumber(currentNutrition.fat)*ratio).toFixed(1)+' 克';document.getElementById('carbMetric').textContent=(nutrientNumber(currentNutrition.carbohydrate)*ratio).toFixed(1)+' 克'}
+async function saveHistory(d){await fetch('/api/history/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({food_name:d.food||d.recognized_as,recognized_as:d.recognized_as,calorie_per_100g:d.calorie_per_100g,protein:d.protein,fat:d.fat,carbohydrate:d.carbohydrate})})}
+fetch('/api/daily_ingredients').then(r=>r.json()).then(items=>{document.getElementById('foodGrid').innerHTML=(Array.isArray(items)?items:[]).map(x=>`<article class="food-card"><div class="food-emoji">${x.emoji||'🥬'}</div><div><h3>${escapeHtml(x.name)}</h3><p><b>${x.calories}</b> kcal / 100g</p></div><div class="macro-line"><span>P ${x.protein}g</span><span>F ${x.fat}g</span><span>C ${x.carb}g</span></div></article>`).join('')||'<div class="empty-tech">暂无食材数据</div>'});
+</script>
+{% endblock %}
